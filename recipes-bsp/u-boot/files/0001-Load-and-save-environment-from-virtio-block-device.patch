@@ -1,4 +1,4 @@
-From 3a15f889a6b32860707cbad76ce936f402a28e41 Mon Sep 17 00:00:00 2001
+From 010af8e8e053f859f44e8a8f50b1e81248c67b8d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Jo=C3=A3o=20Henrique=20Ferreira=20de=20Freitas?=
  <joaohf@gmail.com>
 Date: Thu, 26 Dec 2024 16:40:50 -0300
@@ -34,29 +34,29 @@ load environment variables properly.
 Upstream-Status: Pending
 ---
  env/Kconfig            |  31 +++++++++++-
- env/Makefile           |  15 +++---
+ env/Makefile           |   1 +
  env/env.c              |   3 ++
  env/virtio_blk.c       | 111 +++++++++++++++++++++++++++++++++++++++++
  include/env_internal.h |  21 ++++++++
- 5 files changed, 172 insertions(+), 9 deletions(-)
+ 5 files changed, 165 insertions(+), 2 deletions(-)
  create mode 100644 env/virtio_blk.c
 
 diff --git a/env/Kconfig b/env/Kconfig
-index 031cf58186a..ee1750c1f3e 100644
+index 4430669964c..07f4a6f6dbc 100644
 --- a/env/Kconfig
 +++ b/env/Kconfig
-@@ -61,7 +61,7 @@ config ENV_IS_DEFAULT
+@@ -74,7 +74,7 @@ config ENV_IS_DEFAULT
  		     !ENV_IS_IN_MMC && !ENV_IS_IN_NAND && \
  		     !ENV_IS_IN_NVRAM && !ENV_IS_IN_ONENAND && \
  		     !ENV_IS_IN_REMOTE && !ENV_IS_IN_SPI_FLASH && \
--		     !ENV_IS_IN_UBI
-+		     !ENV_IS_IN_UBI && !ENV_IS_IN_VIRTIO_BLK
+-		     !ENV_IS_IN_UBI && !ENV_IS_IN_MTD && !ENV_IS_IN_SCSI
++		     !ENV_IS_IN_UBI && !ENV_IS_IN_MTD && !ENV_IS_IN_SCSI && !ENV_IS_IN_VIRTIO_BLK
  	select ENV_IS_NOWHERE
  
  config ENV_IS_NOWHERE
-@@ -374,6 +374,33 @@ config ENV_IS_IN_SPI_FLASH
- 	  during a "saveenv" operation. CONFIG_ENV_OFFSET_REDUND must be
- 	  aligned to an erase sector boundary.
+@@ -402,6 +402,33 @@ config ENV_IS_IN_MTD
+ 	  environment area within the MTD Flash.
+ 	  CONFIG_ENV_OFFSET must be aligned to an erase sector boundary.
  
 +config ENV_IS_IN_VIRTIO_BLK
 +	bool "Environment is in a virtio block device"
@@ -88,45 +88,31 @@ index 031cf58186a..ee1750c1f3e 100644
  config ENV_SECT_SIZE_AUTO
  	bool "Use automatically detected sector size"
  	depends on ENV_IS_IN_SPI_FLASH
-@@ -564,7 +591,7 @@ config ENV_ADDR_REDUND
+@@ -592,7 +619,7 @@ config ENV_ADDR_REDUND
  config ENV_OFFSET
  	hex "Environment offset"
  	depends on ENV_IS_IN_EEPROM || ENV_IS_IN_MMC || ENV_IS_IN_NAND || \
--		    ENV_IS_IN_SPI_FLASH
-+		    ENV_IS_IN_SPI_FLASH || ENV_IS_IN_VIRTIO_BLK
+-		    ENV_IS_IN_SPI_FLASH || ENV_IS_IN_MTD
++		    ENV_IS_IN_SPI_FLASH || ENV_IS_IN_MTD || ENV_IS_IN_VIRTIO_BLK
  	default 0x3f8000 if ARCH_ROCKCHIP && ENV_IS_IN_MMC
  	default 0x140000 if ARCH_ROCKCHIP && ENV_IS_IN_SPI_FLASH
  	default 0xF0000 if ARCH_SUNXI
 diff --git a/env/Makefile b/env/Makefile
-index a54e924d419..5af1d15f005 100644
+index d11b87702c1..7924e06bcc3 100644
 --- a/env/Makefile
 +++ b/env/Makefile
-@@ -20,12 +20,13 @@ obj-$(CONFIG_ENV_IS_IN_REMOTE) += remote.o
- obj-$(CONFIG_ENV_IS_IN_UBI) += ubi.o
- endif
- 
--obj-$(CONFIG_$(PHASE_)ENV_IS_NOWHERE) += nowhere.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_MMC) += mmc.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_FAT) += fat.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_EXT4) += ext4.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_NAND) += nand.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_SPI_FLASH) += sf.o
--obj-$(CONFIG_$(PHASE_)ENV_IS_IN_FLASH) += flash.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_NOWHERE) += nowhere.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_MMC) += mmc.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_FAT) += fat.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_EXT4) += ext4.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_NAND) += nand.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_SPI_FLASH) += sf.o
-+obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_FLASH) += flash.o
+@@ -29,5 +29,6 @@ obj-$(CONFIG_$(PHASE_)ENV_IS_IN_SPI_FLASH) += sf.o
+ obj-$(CONFIG_$(PHASE_)ENV_IS_IN_MTD) += mtd.o
+ obj-$(CONFIG_$(PHASE_)ENV_IS_IN_FLASH) += flash.o
+ obj-$(CONFIG_$(PHASE_)ENV_IS_IN_SCSI) += scsi.o
 +obj-$(CONFIG_$(SPL_TPL_)ENV_IS_IN_VIRTIO_BLK) += virtio_blk.o
  
  CFLAGS_embedded.o := -Wa,--no-warn -DENV_CRC=$(shell tools/envcrc 2>/dev/null)
 diff --git a/env/env.c b/env/env.c
-index bcc189e14db..6c39848d77c 100644
+index 7a9c96b4078..cb710ab107c 100644
 --- a/env/env.c
 +++ b/env/env.c
-@@ -61,6 +61,9 @@ static enum env_location env_locations[] = {
+@@ -67,6 +67,9 @@ static enum env_location env_locations[] = {
  #ifdef CONFIG_ENV_IS_IN_UBI
  	ENVL_UBI,
  #endif
@@ -254,18 +240,18 @@ index 00000000000..540a61de5dc
 +	.save		= ENV_SAVE_PTR(env_virtio_blk_save),
 +};
 diff --git a/include/env_internal.h b/include/env_internal.h
-index c1c0727e4d0..a593d2ca535 100644
+index 0589c435e84..2f0e4022603 100644
 --- a/include/env_internal.h
 +++ b/include/env_internal.h
-@@ -114,6 +114,7 @@ enum env_location {
- 	ENVL_REMOTE,
- 	ENVL_SPI_FLASH,
+@@ -116,6 +116,7 @@ enum env_location {
+ 	ENVL_MTD,
  	ENVL_UBI,
+ 	ENVL_SCSI,
 +	ENVL_VIRTIO_BLK,
  	ENVL_NOWHERE,
  
  	ENVL_COUNT,
-@@ -271,6 +272,26 @@ const char *env_fat_get_intf(void);
+@@ -273,6 +274,26 @@ const char *env_fat_get_intf(void);
   * Return: string of device and partition
   */
  char *env_fat_get_dev_part(void);
